@@ -431,13 +431,32 @@ export default function App() {
                 </AnimatePresence>
             </div>
 
-                    >
-            {loading ? <Activity className="animate-spin" /> : <Send size={20} />}
-            Skicka Rapport
-        </button>
-                </div >
-            )
-}
-        </div >
+            {/* Bottom Navigation Bar */}
+            <div className="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 px-6 py-2 pb-6 z-50 flex justify-between items-center shadow-2xl">
+                <button
+                    onClick={() => { setCurrentTab('measure'); setView('list'); }}
+                    className={`flex flex-col items-center gap-1 transition-all ${currentTab === 'measure' ? 'text-emerald-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                    <Ruler size={24} strokeWidth={currentTab === 'measure' ? 2.5 : 2} />
+                    <span className="text-[10px] font-medium">Mätning</span>
+                </button>
+
+                <button
+                    onClick={() => { setCurrentTab('history'); setView('list'); }}
+                    className={`flex flex-col items-center gap-1 transition-all ${currentTab === 'history' ? 'text-emerald-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                    <CheckCircle size={24} strokeWidth={currentTab === 'history' ? 2.5 : 2} />
+                    <span className="text-[10px] font-medium">Mätkort</span>
+                </button>
+
+                <button
+                    onClick={() => { setCurrentTab('drawings'); setView('list'); }}
+                    className={`flex flex-col items-center gap-1 transition-all ${currentTab === 'drawings' ? 'text-emerald-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                    <FileImage size={24} strokeWidth={currentTab === 'drawings' ? 2.5 : 2} />
+                    <span className="text-[10px] font-medium">Ritningar</span>
+                </button>
+            </div>
+        </div>
     );
 }
