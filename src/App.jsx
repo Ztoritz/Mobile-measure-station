@@ -98,8 +98,35 @@ export default function App() {
                         >
                             <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Väntande Mätningar</h2>
                             {requests.length === 0 && (
-                                <div className="text-slate-500 text-center py-10 italic">
-                                    Inga väntande ordrar...
+                                <div className="text-slate-500 text-center py-10 italic flex flex-col items-center gap-4">
+                                    <p>Inga väntande ordrar...</p>
+                                    <button
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            if (!confirm("Skapa en testorder?")) return;
+                                            try {
+                                                const xml = `
+                                                    <Order>
+                                                        <Id>TEST-${Math.floor(Math.random() * 1000)}</Id>
+                                                        <Article>Test-Artikel</Article>
+                                                        <Drawing>D-TEST</Drawing>
+                                                    </Order>`;
+                                                await fetch(`${API_URL}/api/parse`, {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/xml' },
+                                                    body: xml
+                                                });
+                                                // Trigger update immediately
+                                                const res = await fetch(`${API_URL}/api/orders`);
+                                                if (res.ok) setRequests(await res.json());
+                                            } catch (err) {
+                                                alert("Kunde inte skapa testorder: " + err.message);
+                                            }
+                                        }}
+                                        className="text-xs bg-slate-800 hover:bg-slate-700 text-blue-400 px-3 py-2 rounded-lg border border-slate-700 transition-colors"
+                                    >
+                                        + Skapa Testorder
+                                    </button>
                                 </div>
                             )}
                             {requests.map(req => (
