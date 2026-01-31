@@ -5,19 +5,33 @@ import { motion, AnimatePresence } from 'framer-motion';
 // API Configuration
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-// Mock-data tills API är kopplat
-const DEMO_REQUESTS = [
-    { id: '1', article: '20-100', drawing: 'R-1001', status: 'WAITING' },
-    { id: '2', article: '45-200', drawing: 'R-2055', status: 'WAITING' },
-    { id: '3', article: '10-500', drawing: 'R-5001', status: 'IN_PROGRESS' },
-];
-
 export default function App() {
     const [view, setView] = useState('list'); // 'list', 'measure', 'success'
-    const [requests, setRequests] = useState(DEMO_REQUESTS);
+    const [requests, setRequests] = useState([]);
+    const [loading, setLoading] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState(null);
     const [signature, setSignature] = useState('');
     const [measurementValue, setMeasurementValue] = useState('');
+
+    // Fetch orders
+    useEffect(() => {
+        const fetchOrders = async () => {
+            try {
+                const response = await fetch(`${API_URL}/api/orders`);
+                if (response.ok) {
+                    const data = await response.json();
+                    setRequests(data);
+                }
+            } catch (err) {
+                console.error("Failed to fetch orders:", err);
+            }
+        };
+
+        fetchOrders();
+        // Poll every 5 seconds
+        const interval = setInterval(fetchOrders, 5000);
+        return () => clearInterval(interval);
+    }, []);
 
     const handleSelect = (req) => {
         setSelectedRequest(req);
@@ -83,7 +97,12 @@ export default function App() {
                             className="space-y-3"
                         >
                             <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Väntande Mätningar</h2>
-                            {DEMO_REQUESTS.map(req => (
+                            {requests.length === 0 && (
+                                <div className="text-slate-500 text-center py-10 italic">
+                                    Inga väntande ordrar...
+                                </div>
+                            )}
+                            {requests.map(req => (
                                 <div
                                     key={req.id}
                                     onClick={() => handleSelect(req)}
