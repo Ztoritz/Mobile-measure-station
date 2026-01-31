@@ -184,6 +184,11 @@ export default function App() {
                     </button>
                 </div>
             )}
+            {/* Debug / Connection Info */}
+            <div className="text-[10px] text-slate-600 p-2 text-center font-mono">
+                Server: {API_URL} <br />
+                Status: {loading ? 'Sending...' : 'Idle'}
+            </div>
         </div>
     );
 }
