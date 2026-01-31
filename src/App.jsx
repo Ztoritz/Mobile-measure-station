@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { Ruler, FileText, CheckCircle, User, ArrowLeft, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// API Configuration
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
 // Mock-data tills API är kopplat
 const DEMO_REQUESTS = [
     { id: '1', article: '20-100', drawing: 'R-1001', status: 'WAITING' },
@@ -11,22 +14,46 @@ const DEMO_REQUESTS = [
 
 export default function App() {
     const [view, setView] = useState('list'); // 'list', 'measure', 'success'
+    const [requests, setRequests] = useState(DEMO_REQUESTS);
     const [selectedRequest, setSelectedRequest] = useState(null);
     const [signature, setSignature] = useState('');
+    const [measurementValue, setMeasurementValue] = useState('');
 
     const handleSelect = (req) => {
         setSelectedRequest(req);
         setView('measure');
+        setMeasurementValue('');
     };
 
-    const handleSubmit = () => {
-        // Här skickar vi till XML-servern
-        setView('success');
-        setTimeout(() => {
-            setView('list');
-            setSelectedRequest(null);
-            setSignature('');
-        }, 2000);
+    const handleSubmit = async () => {
+        // Skicka till XML Server
+        try {
+            console.log("Sending to:", API_URL);
+            const payload = {
+                requestId: selectedRequest.id,
+                article: selectedRequest.article,
+                drawing: selectedRequest.drawing,
+                measurement: measurementValue,
+                signature: signature,
+                timestamp: new Date().toISOString()
+            };
+
+            await fetch(`${API_URL}/api/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ MeasurementResult: payload })
+            });
+
+            setView('success');
+            setTimeout(() => {
+                setView('list');
+                setSelectedRequest(null);
+                setSignature('');
+            }, 2000);
+        } catch (err) {
+            console.error(err);
+            alert("Kunde inte skicka: " + err.message);
+        }
     };
 
     return (
@@ -97,6 +124,8 @@ export default function App() {
                                     <div className="relative">
                                         <input
                                             type="number"
+                                            value={measurementValue}
+                                            onChange={(e) => setMeasurementValue(e.target.value)}
                                             className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-xl font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors"
                                             placeholder="0.00"
                                         />
@@ -113,8 +142,8 @@ export default function App() {
                                             key={sig}
                                             onClick={() => setSignature(sig)}
                                             className={`px-6 py-3 rounded-full font-bold text-sm whitespace-nowrap transition-all ${signature === sig
-                                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                                                    : 'bg-slate-800 text-slate-400 border border-slate-700'
+                                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                                                : 'bg-slate-800 text-slate-400 border border-slate-700'
                                                 }`}
                                         >
                                             {sig}
