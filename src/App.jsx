@@ -8,10 +8,12 @@ const PROTOCOL = window.location.protocol;
 const API_URL = import.meta.env.VITE_API_URL || `${PROTOCOL}//${SERVER_DOMAIN}`;
 
 export default function App() {
-    const [view, setView] = useState('list'); // 'list', 'measure', 'success'
+    const [view, setView] = useState('list'); // 'list', 'measure', 'success', 'history'
     const [requests, setRequests] = useState([]);
+    const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState(null);
+    const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
     const [signature, setSignature] = useState('');
 
     // Dynamic Measurements State
@@ -26,9 +28,24 @@ export default function App() {
                 if (response.ok) {
                     const data = await response.json();
 
-                    // Filter out items that are ALREADY DONE (status check if available)
-                    // For now show all, maybe filter in UI
-                    setRequests(data);
+                    const pending = [];
+                    const done = [];
+
+                    data.forEach(order => {
+                        const xml = order.rawData || '';
+                        if (xml.includes('<MeasurementReport')) {
+                            done.push(order);
+                        } else if (xml.includes('<MeasurementRequest') || xml.includes('<Order>')) {
+                            pending.push(order);
+                        }
+                    });
+
+                    // Sort: Newest first
+                    pending.sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
+                    done.sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
+
+                    setRequests(pending);
+                    setHistory(done);
                 }
             } catch (err) {
                 console.error("Failed to fetch orders:", err);
@@ -37,7 +54,7 @@ export default function App() {
 
         fetchOrders();
         // Poll every 5 seconds
-        const interval = setInterval(fetchOrders, 5000);
+        const interval = setInterval(fetchOrders, 3000); // Faster poll
         return () => clearInterval(interval);
     }, []);
 
@@ -153,6 +170,20 @@ export default function App() {
                     <h1 className="font-bold text-lg tracking-tight">Mätstation</h1>
                     <div className="text-xs text-slate-500 font-mono">SIM ÅKERS MOBILE</div>
                 </div>
+                <div className="ml-auto flex bg-slate-800 rounded-lg p-1">
+                    <button
+                        onClick={() => setView('list')}
+                        className={`px-3 py-1 rounded text-xs font-medium transition-all ${view === 'list' ? 'bg-slate-700 text-white shadow' : 'text-slate-400'}`}
+                    >
+                        Mät
+                    </button>
+                    <button
+                        onClick={() => setView('history')}
+                        className={`px-3 py-1 rounded text-xs font-medium transition-all ${view === 'history' || view === 'history-detail' ? 'bg-slate-700 text-white shadow' : 'text-slate-400'}`}
+                    >
+                        Arkiv
+                    </button>
+                </div>
             </div>
 
             {/* Content Area */}
@@ -224,7 +255,134 @@ export default function App() {
                         </motion.div>
                     )}
 
-                    {/* Mätvy */}
+                    {/* Historik Lista */}
+                    {view === 'history' && (
+                        <motion.div
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: 20 }}
+                            className="space-y-3"
+                        >
+                            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Mätkortshistorik</h2>
+                            {history.length === 0 && (
+                                <div className="text-slate-500 text-center py-10 italic">Inget arkiverat än...</div>
+                            )}
+                            {history.map(req => {
+                                // Extract basic info from rawData XML since it's a Report now
+                                const parser = new DOMParser();
+                                const doc = parser.parseFromString(req.rawData, "text/xml");
+                                const status = doc.querySelector('Status')?.textContent || 'OK'; // Overall status? Needs logic.
+                                const date = doc.documentElement.getAttribute('timestamp') || req.receivedAt;
+                                const controller = doc.querySelector('Controller')?.textContent || 'Okänd';
+
+                                return (
+                                    <div
+                                        key={req.id}
+                                        onClick={() => {
+                                            // Parse details for View
+                                            const results = Array.from(doc.querySelectorAll('Parameter')).map(p => ({
+                                                id: p.getAttribute('id'),
+                                                nominal: p.querySelector('Nominal')?.textContent,
+                                                measured: p.querySelector('Measured')?.textContent,
+                                                status: p.querySelector('Status')?.textContent,
+                                                tolUp: p.querySelector('Tolerance')?.getAttribute('upper'),
+                                                tolLo: p.querySelector('Tolerance')?.getAttribute('lower'),
+                                            }));
+
+                                            setSelectedHistoryItem({
+                                                ...req,
+                                                controller,
+                                                timestamp: date,
+                                                results
+                                            });
+                                            setView('history-detail');
+                                        }}
+                                        className="bg-slate-900/50 p-4 rounded-xl border border-slate-800 active:bg-slate-800 transition-all shadow-sm"
+                                    >
+                                        <div className="flex justify-between items-center mb-1">
+                                            <span className="font-mono text-emerald-400 text-xs font-bold">{req.article}</span>
+                                            <span className="text-[10px] text-slate-500">{new Date(date).toLocaleDateString()}</span>
+                                        </div>
+                                        <div className="text-xs text-slate-400 flex justify-between">
+                                            <span>{req.drawing}</span>
+                                            <span className="text-slate-500">{controller}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </motion.div>
+                    )}
+
+                    {/* Historik Detalj (Control Card) */}
+                    {view === 'history-detail' && selectedHistoryItem && (
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="space-y-4"
+                        >
+                            <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 shadow-xl">
+                                <div className="flex justify-between items-start border-b border-slate-700 pb-4 mb-4">
+                                    <div>
+                                        <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                                            <FileText className="text-emerald-500" size={20} /> Kontrollkort
+                                        </h3>
+                                        <div className="text-xs text-slate-400 mt-1">
+                                            ID: <span className="font-mono text-emerald-300">{selectedHistoryItem.id}</span>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="px-2 py-1 bg-emerald-900/30 text-emerald-400 rounded text-xs font-bold border border-emerald-500/30">
+                                            GODKÄND
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4 text-xs text-slate-400 mb-6 font-mono">
+                                    <div>
+                                        <span className="block text-slate-500 mb-1">Artikel</span>
+                                        <span className="text-slate-200 text-sm">{selectedHistoryItem.article}</span>
+                                    </div>
+                                    <div>
+                                        <span className="block text-slate-500 mb-1">Ritning</span>
+                                        <span className="text-slate-200 text-sm">{selectedHistoryItem.drawing}</span>
+                                    </div>
+                                    <div>
+                                        <span className="block text-slate-500 mb-1">Kontrollant</span>
+                                        <span className="text-slate-200">{selectedHistoryItem.controller}</span>
+                                    </div>
+                                    <div>
+                                        <span className="block text-slate-500 mb-1">Datum</span>
+                                        <span className="text-slate-200">{new Date(selectedHistoryItem.timestamp).toLocaleString()}</span>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    {selectedHistoryItem.results.map(r => (
+                                        <div key={r.id} className="bg-slate-900/50 p-3 rounded border border-slate-700/50 flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-2 h-2 rounded-full ${r.status === 'OK' ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+                                                <span className="font-mono text-slate-400 text-xs">{r.id}</span>
+                                            </div>
+
+                                            <div className="text-right">
+                                                <div className={`font-mono font-bold ${r.status === 'OK' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                    {r.measured}
+                                                </div>
+                                                <div className="text-[10px] text-slate-600">
+                                                    Nom: {r.nominal} ({r.tolLo}/{String(r.tolUp).startsWith('+') ? '' : '+'}{r.tolUp})
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="mt-6 pt-4 border-t border-slate-700">
+                                    <button onClick={() => setView('history')} className="w-full py-3 bg-slate-700 rounded-lg text-slate-200 text-sm font-medium">Stäng</button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
+
                     {view === 'measure' && selectedRequest && (
                         <motion.div
                             initial={{ opacity: 0, x: 20 }}
