@@ -131,6 +131,24 @@ export default function App() {
                                     >
                                         + Skapa Testorder
                                     </button>
+                                    <button
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            try {
+                                                const res = await fetch(`${API_URL}/`);
+                                                if (res.ok) {
+                                                    alert(`Anslutning lyckades!\nServer: ${API_URL}\nSvar: ${await res.text()}`);
+                                                } else {
+                                                    throw new Error(res.statusText);
+                                                }
+                                            } catch (err) {
+                                                alert(`Kunde inte nå servern.\nURL: ${API_URL}\nFel: ${err.message}`);
+                                            }
+                                        }}
+                                        className="text-xs text-slate-500 hover:text-slate-300 underline mt-4"
+                                    >
+                                        Testa Anslutning (Health Check)
+                                    </button>
                                 </div>
                             )}
                             {requests.map(req => (
