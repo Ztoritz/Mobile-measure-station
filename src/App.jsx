@@ -217,7 +217,7 @@ export default function App() {
                         <motion.div
                             key="measure-detail"
                             initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 50, opacity: 0 }}
-                            className="pb-10"
+                            className="pb-40"
                         >
                             <button onClick={() => setView('list')} className="mb-4 flex items-center gap-2 text-slate-400 text-sm active:text-white">
                                 <ArrowLeft size={16} /> Tillbaka
@@ -299,8 +299,8 @@ export default function App() {
                                 </div>
                             </div>
 
-                            {/* Submit Button */}
-                            <div className="fixed bottom-24 left-4 right-4 z-40">
+                            {/* Submit Button - Floating with Backdrop Blur */}
+                            <div className="fixed bottom-24 left-0 right-0 p-4 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent z-40">
                                 <button
                                     onClick={handleSubmit}
                                     disabled={!signature || Object.values(measurements).some(m => m.measured === '')}
