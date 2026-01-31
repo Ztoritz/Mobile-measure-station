@@ -3,7 +3,7 @@ import { Ruler, FileText, CheckCircle, User, ArrowLeft, Send } from 'lucide-reac
 import { motion, AnimatePresence } from 'framer-motion';
 
 // API Configuration
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://oso80gcwkkwgogocc8wsowco.109.205.176.58.sslip.io';
 
 export default function App() {
     const [view, setView] = useState('list'); // 'list', 'measure', 'success'
