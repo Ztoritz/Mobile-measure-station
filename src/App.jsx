@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Ruler, FileText, CheckCircle, User, ArrowLeft, Send, Activity, AlertCircle } from 'lucide-react';
+import { Ruler, FileText, FileImage, User, CheckCircle, AlertCircle, Search, ChevronRight, X, Activity, Send, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import io from 'socket.io-client';
 
@@ -9,12 +9,18 @@ const PROTOCOL = window.location.protocol;
 const API_URL = import.meta.env.VITE_API_URL || `${PROTOCOL}//${SERVER_DOMAIN}`;
 
 export default function App() {
-    const [view, setView] = useState('list'); // 'list', 'measure', 'success', 'history'
+    const [currentTab, setCurrentTab] = useState('measure'); // 'measure', 'history', 'drawings'
+    const [view, setView] = useState('list'); // 'list', 'detail' (within tab)
+
+    // Data State
     const [requests, setRequests] = useState([]);
     const [history, setHistory] = useState([]);
+    const [drawings, setDrawings] = useState([]); // Derived from history/requests
+
     const [loading, setLoading] = useState(false);
-    const [selectedRequest, setSelectedRequest] = useState(null);
-    const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
+
+    // Selection State
+    const [selectedItem, setSelectedItem] = useState(null);
     const [signature, setSignature] = useState('');
 
     // Socket State
@@ -35,23 +41,30 @@ export default function App() {
         newSocket.on('init_state', (data) => {
             setRequests(data.activeOrders);
             setHistory(data.archivedOrders);
+            updateDrawingsList([...data.activeOrders, ...data.archivedOrders]);
         });
 
         // Real-time Updates
         newSocket.on('order_created', (newOrder) => {
-            setRequests(prev => [newOrder, ...prev]);
-            // Optional: Notification sound/vibration
+            setRequests(prev => {
+                const updated = [newOrder, ...prev];
+                updateDrawingsList([...updated, ...history]);
+                return updated;
+            });
         });
 
         newSocket.on('order_completed', (completedOrder) => {
-            // Move from Requests to History (if we still have it in requests locally)
             setRequests(prev => prev.filter(r => r.id !== completedOrder.id));
-            setHistory(prev => [completedOrder, ...prev]);
+            setHistory(prev => {
+                const updated = [completedOrder, ...prev];
+                updateDrawingsList([...requests, ...updated]);
+                return updated;
+            });
         });
 
-        // Full list refresh (if needed)
         newSocket.on('active_orders_update', (orders) => {
             setRequests(orders);
+            updateDrawingsList([...orders, ...history]);
         });
 
         setSocket(newSocket);
@@ -59,24 +72,32 @@ export default function App() {
         return () => newSocket.close();
     }, []);
 
-    const handleSelect = (req) => {
-        // Definitions are now ALREADY PARSED in the JSON object!
-        // No XML parsing needed here.
+    // Helper to extract unique drawings for the "Ritningar" tab
+    const updateDrawingsList = (allItems) => {
+        const unique = new Map();
+        allItems.forEach(item => {
+            if (item.drawingNumber && item.drawingNumber !== '?.??' && !unique.has(item.drawingNumber)) {
+                unique.set(item.drawingNumber, {
+                    id: item.drawingNumber,
+                    number: item.drawingNumber,
+                    article: item.articleNumber,
+                    pdfUrl: item.pdfUrl || '' // If we had it
+                });
+            }
+        });
+        setDrawings(Array.from(unique.values()));
+    };
+
+    const handleSelectRequest = (req) => {
         const definitions = req.definitions || [];
-
-        // Fallback if no definitions (legacy support)
-        if (definitions.length === 0) {
-            console.warn("No definitions found for order", req.id);
-        }
-
         const initialMeasurements = {};
         definitions.forEach(d => {
             initialMeasurements[d.id] = { measured: '', status: 'NEUTRAL', def: d };
         });
 
-        setSelectedRequest({ ...req, definitions });
+        setSelectedItem(req);
         setMeasurements(initialMeasurements);
-        setView('measure');
+        setView('detail');
         setSignature('');
     };
 
@@ -101,341 +122,322 @@ export default function App() {
     };
 
     const handleSubmit = async () => {
-        if (!selectedRequest || !socket) return;
+        if (!selectedItem || !socket) return;
 
         setLoading(true);
 
-        // Prepare Results Array for JSON
         const results = Object.entries(measurements).map(([id, data]) => ({
             id: id,
             measured: data.measured,
             status: data.status,
-            def: data.def // Include definition for easy XML generation on server
+            def: data.def
         }));
 
         const payload = {
-            id: selectedRequest.id,
+            id: selectedItem.id,
             controller: signature,
             results: results
         };
 
-        // Emit Socket Event
         socket.emit('submit_measurement', payload);
 
-        // Optimistic UI Update
-        setView('success');
-        setTimeout(() => {
-            setView('list');
-            setSelectedRequest(null);
-            setSignature('');
-        }, 1500);
+        // UI Reset
+        setView('list'); // Back to list within 'measure' tab
+        setSelectedItem(null);
+        setSignature('');
         setLoading(false);
     };
 
     return (
-        <div className="bg-slate-950 min-h-[100dvh] text-slate-100 flex flex-col font-sans">
-            {/* Header */}
-            <div className="p-4 bg-slate-900 border-b border-slate-800 flex items-center gap-3 sticky top-0 z-10 shadow-lg">
-                {view !== 'list' && (
-                    <button onClick={() => setView('list')} className="p-2 -ml-2 text-slate-400">
-                        <ArrowLeft />
-                    </button>
-                )}
+        <div className="min-h-screen bg-slate-950 text-slate-200 font-sans pb-20 select-none">
+            {/* Header - Fixed Top */}
+            <div className="fixed top-0 left-0 right-0 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 p-4 z-50 flex justify-between items-center shadow-lg">
                 <div>
-                    <h1 className="font-bold text-lg tracking-tight">Mätstation</h1>
-                    <div className="text-xs text-slate-500 font-mono">SIM ÅKERS MOBILE</div>
+                    <h1 className="font-bold text-lg tracking-tight text-white">Mätstation</h1>
+                    <div className="text-[10px] text-emerald-500 font-mono tracking-wider">SIM ÅKERS MOBILE</div>
                 </div>
-                <div className="ml-auto flex bg-slate-800 rounded-lg p-1">
-                    <button
-                        onClick={() => setView('list')}
-                        className={`px-3 py-1 rounded text-xs font-medium transition-all ${view === 'list' ? 'bg-slate-700 text-white shadow' : 'text-slate-400'}`}
-                    >
-                        Mät
-                    </button>
-                    <button
-                        onClick={() => setView('history')}
-                        className={`px-3 py-1 rounded text-xs font-medium transition-all ${view === 'history' || view === 'history-detail' ? 'bg-slate-700 text-white shadow' : 'text-slate-400'}`}
-                    >
-                        Arkiv
-                    </button>
+                <div className="bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
+                    <div className={`w-2 h-2 rounded-full ${socket ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></div>
                 </div>
             </div>
 
-            {/* Content Area */}
-            <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
+            {/* Main Content Area - Scrollable */}
+            <div className="pt-20 px-4 space-y-4">
                 <AnimatePresence mode="wait">
-                    {/* Lista över ordrar */}
-                    {view === 'list' && (
+
+                    {/* TAB: MÄTNING (INBOX) */}
+                    {currentTab === 'measure' && view === 'list' && (
                         <motion.div
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: -20 }}
+                            key="inbox"
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                             className="space-y-3"
                         >
-                            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Väntande Mätningar</h2>
+                            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <Activity size={14} /> Väntande Mätningar
+                            </h2>
                             {requests.length === 0 && (
-                                <div className="text-slate-500 text-center py-10 italic flex flex-col items-center gap-4">
-                                    <p>Inga väntande ordrar...</p>
-                                    <button
-                                        onClick={async (e) => {
-                                            e.stopPropagation();
-                                            if (!confirm("Skapa en testorder?")) return;
-                                            // Test Order with Definitions
-                                            const xml = `
-<MeasurementRequest id="TEST-${Math.floor(Math.random() * 1000)}">
-  <ArticleNumber>Test-Axel</ArticleNumber>
-  <DrawingNumber>D-999</DrawingNumber>
-  <Status>REQUESTED</Status>
-  <Definitions>
-    <Param ID="M1" Nominal="50.0" TolUp="0.1" TolLo="-0.1" GD="dia" />
-    <Param ID="M2" Nominal="120.0" TolUp="0.5" TolLo="-0.5" GD="lin" />
-  </Definitions>
-</MeasurementRequest>`;
-                                            await fetch(`${API_URL}/api/parse`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/xml' },
-                                                body: xml
-                                            });
-                                            // Trigger update
-                                            const res = await fetch(`${API_URL}/api/orders`);
-                                            if (res.ok) setRequests(await res.json());
-                                        }}
-                                        className="text-xs bg-slate-800 hover:bg-slate-700 text-blue-400 px-3 py-2 rounded-lg border border-slate-700 transition-colors"
-                                    >
-                                        + Skapa Testorder (med Parametrar)
-                                    </button>
+                                <div className="flex flex-col items-center justify-center py-20 text-slate-600 opacity-50">
+                                    <Ruler size={48} className="mb-4 text-slate-700" />
+                                    <p>Inga aktiva ordrar</p>
                                 </div>
                             )}
                             {requests.map(req => (
                                 <div
                                     key={req.id}
-                                    onClick={() => handleSelect(req)}
-                                    className="bg-slate-900 p-5 rounded-2xl border border-slate-800 active:bg-slate-800 active:scale-[0.98] transition-all shadow-sm"
+                                    onClick={() => handleSelectRequest(req)}
+                                    className="bg-slate-900 border border-slate-800 p-4 rounded-xl active:scale-[0.98] transition-all relative overflow-hidden group shadow-md"
                                 >
-                                    <div className="flex justify-between items-start mb-2">
-                                        <span className="bg-blue-500/10 text-blue-400 text-xs font-bold px-2 py-1 rounded">
-                                            {req.article}
-                                        </span>
-                                        <span className="text-slate-500 text-xs text-right">#{req.id?.substr(0, 8)}...</span>
+                                    <div className="absolute top-0 right-0 p-2 opacity-50">
+                                        <ChevronRight size={20} className="text-slate-600" />
                                     </div>
-                                    <div className="flex items-center gap-2 text-slate-300">
-                                        <FileText size={16} />
-                                        <span className="font-mono text-sm">{req.drawing}</span>
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500 font-bold border border-emerald-500/20">
+                                            {req.definitions?.length || '?'}
+                                        </div>
+                                        <div>
+                                            <div className="text-white font-bold text-lg leading-none">{req.articleNumber}</div>
+                                            <div className="text-slate-400 text-xs font-mono mt-1">{req.drawingNumber}</div>
+                                        </div>
                                     </div>
-                                    <div className="text-[10px] text-slate-500 mt-2 font-mono">
-                                        {new Date(req.receivedAt).toLocaleTimeString()}
+                                    <div className="flex justify-between items-end mt-2">
+                                        <div className="px-2 py-0.5 bg-slate-800 rounded text-[10px] text-slate-500 font-mono">
+                                            {req.id.substring(0, 8)}...
+                                        </div>
+                                        <div className="text-[10px] text-slate-500">
+                                            {new Date(req.receivedAt).toLocaleTimeString().substring(0, 5)}
+                                        </div>
                                     </div>
                                 </div>
                             ))}
                         </motion.div>
                     )}
 
-                    {/* Historik Lista */}
-                    {view === 'history' && (
+                    {/* VIEW: MEASURE DETAIL */}
+                    {currentTab === 'measure' && view === 'detail' && selectedItem && (
                         <motion.div
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: 20 }}
+                            key="measure-detail"
+                            initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 50, opacity: 0 }}
+                            className="pb-10"
+                        >
+                            <button onClick={() => setView('list')} className="mb-4 flex items-center gap-2 text-slate-400 text-sm active:text-white">
+                                <ArrowLeft size={16} /> Tillbaka
+                            </button>
+
+                            <div className="bg-slate-900 rounded-xl p-5 border border-slate-800 shadow-xl mb-6 relative overflow-hidden">
+                                <div className="relative z-10">
+                                    <h2 className="text-2xl font-bold text-white mb-1">{selectedItem.articleNumber}</h2>
+                                    <div className="text-emerald-500 font-mono text-sm mb-4">{selectedItem.drawingNumber}</div>
+                                    <div className="grid grid-cols-2 gap-4 text-xs text-slate-500">
+                                        <div className="bg-slate-950/50 p-2 rounded">
+                                            <span className="block mb-1">Datum</span>
+                                            <span className="text-slate-300">{new Date(selectedItem.timestamp).toLocaleDateString()}</span>
+                                        </div>
+                                        <div className="bg-slate-950/50 p-2 rounded">
+                                            <span className="block mb-1">ID</span>
+                                            <span className="font-mono text-slate-300">{selectedItem.id.slice(-6)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                {selectedItem.definitions?.map(def => {
+                                    const state = measurements[def.id];
+                                    return (
+                                        <div key={def.id} className={`p-4 rounded-xl border transition-all ${state.status === 'OK' ? 'bg-emerald-950/20 border-emerald-500/30' : state.status === 'FAIL' ? 'bg-red-950/20 border-red-500/30' : 'bg-slate-900 border-slate-800'}`}>
+                                            <div className="flex justify-between items-center mb-3">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center font-mono text-xs font-bold text-slate-400 border border-slate-700">
+                                                        {def.id}
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-sm font-medium text-slate-300">
+                                                            {def.description || (def.gdtType !== 'none' ? def.gdtType : 'Dimension')}
+                                                        </div>
+                                                        <div className="text-[10px] text-slate-500 font-mono">
+                                                            Nom: {def.nominal} <span className="text-slate-600">({def.lowerTol}/{def.upperTol})</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                {state.status === 'OK' && <CheckCircle size={20} className="text-emerald-500" />}
+                                                {state.status === 'FAIL' && <AlertCircle size={20} className="text-red-500" />}
+                                            </div>
+
+                                            <div className="relative">
+                                                <input
+                                                    type="number"
+                                                    inputMode="decimal"
+                                                    value={state.measured}
+                                                    onChange={(e) => handleMeasurementUpdate(def.id, e.target.value)}
+                                                    placeholder="Ange värde..."
+                                                    className={`w-full bg-slate-950 border text-center text-xl font-mono py-4 rounded-lg outline-none focus:ring-2 transition-all placeholder:text-slate-800 ${state.status === 'OK' ? 'border-emerald-500/50 text-emerald-400 focus:ring-emerald-500/20' : state.status === 'FAIL' ? 'border-red-500/50 text-red-400 focus:ring-red-500/20' : 'border-slate-700 text-white focus:border-blue-500'}`}
+                                                />
+                                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 text-xs font-bold">mm</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Signature */}
+                            <div className="mt-8 bg-slate-900 p-4 rounded-xl border border-slate-800">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 block">Signera Mätning</label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {['Niklas Jalvemyr', 'Olle Ljungberg'].map(name => {
+                                        const initials = name.split(' ').map(n => n[0]).join('');
+                                        const isSelected = signature === initials;
+                                        return (
+                                            <button
+                                                key={initials}
+                                                onClick={() => setSignature(initials)}
+                                                className={`p-3 rounded-lg border text-sm font-medium flex items-center justify-center gap-2 transition-all ${isSelected ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-900/50' : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800'}`}
+                                            >
+                                                <User size={16} /> {name}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Submit Button */}
+                            <div className="fixed bottom-24 left-4 right-4 z-40">
+                                <button
+                                    onClick={handleSubmit}
+                                    disabled={!signature || Object.values(measurements).some(m => m.measured === '')}
+                                    className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] text-slate-900 font-bold text-lg rounded-xl shadow-xl shadow-emerald-900/20 disabled:opacity-50 disabled:grayscale transition-all flex items-center justify-center gap-2"
+                                >
+                                    {loading ? <Activity className="animate-spin" /> : <Send size={20} />}
+                                    Skicka Rapport
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
+
+                    {/* TAB: MÄTKORT (HISTORY) */}
+                    {currentTab === 'history' && view === 'list' && (
+                        <motion.div
+                            key="history"
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                             className="space-y-3"
                         >
-                            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Mätkortshistorik</h2>
-                            {history.length === 0 && (
-                                <div className="text-slate-500 text-center py-10 italic">Inget arkiverat än...</div>
-                            )}
-                            {history.map(req => {
-                                // Simplified for JSON data (no XML parsing needed!)
-                                return (
-                                    <div
-                                        key={req.id}
-                                        onClick={() => {
-                                            setSelectedHistoryItem(req);
-                                            setView('history-detail');
-                                        }}
-                                        className="bg-slate-900/50 p-4 rounded-xl border border-slate-800 active:bg-slate-800 transition-all shadow-sm"
-                                    >
-                                        <div className="flex justify-between items-center mb-1">
-                                            <span className="font-mono text-emerald-400 text-xs font-bold">{req.articleNumber}</span>
-                                            <span className="text-[10px] text-slate-500">{new Date(req.completedAt || req.timestamp).toLocaleDateString()}</span>
-                                        </div>
-                                        <div className="text-xs text-slate-400 flex justify-between">
-                                            <span>{req.drawingNumber}</span>
-                                            <span className="text-slate-500">{req.controller}</span>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </motion.div>
-                    )}
-
-                    {/* Historik Detalj (Control Card) */}
-                    {view === 'history-detail' && selectedHistoryItem && (
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            className="space-y-4"
-                        >
-                            <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 shadow-xl">
-                                <div className="flex justify-between items-start border-b border-slate-700 pb-4 mb-4">
+                            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <FileText size={14} /> Arkiverade Mätkort
+                            </h2>
+                            {history.length === 0 && <div className="text-center text-slate-600 py-10">Tomt arkiv</div>}
+                            {history.map(item => (
+                                <div
+                                    key={item.id}
+                                    onClick={() => { setSelectedItem(item); setView('history-detail'); }}
+                                    className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex justify-between items-center active:bg-slate-800 transition-all"
+                                >
                                     <div>
-                                        <h3 className="text-white font-bold text-lg flex items-center gap-2">
-                                            <FileText className="text-emerald-500" size={20} /> Kontrollkort
-                                        </h3>
-                                        <div className="text-xs text-slate-400 mt-1">
-                                            ID: <span className="font-mono text-emerald-300">{selectedHistoryItem.id}</span>
-                                        </div>
+                                        <div className="font-bold text-white text-sm">{item.articleNumber}</div>
+                                        <div className="text-xs text-emerald-500 font-mono">{item.serialNumber || 'M-SERIES'}</div>
                                     </div>
                                     <div className="text-right">
-                                        <div className="px-2 py-1 bg-emerald-900/30 text-emerald-400 rounded text-xs font-bold border border-emerald-500/30">
-                                            GODKÄND
+                                        <div className={`text-xs font-bold px-2 py-1 rounded inline-block ${item.status === 'OK' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                                            {item.status || 'OK'}
                                         </div>
+                                        <div className="text-[10px] text-slate-500 mt-1">{new Date(item.completedAt).toLocaleDateString()}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </motion.div>
+                    )}
+
+                    {/* HISTORY DETAIL MODAL (CONTROL CARD) */}
+                    {currentTab === 'history' && view === 'history-detail' && selectedItem && (
+                        <div className="fixed inset-0 z-[60] bg-slate-950 p-4 overflow-auto">
+                            <button onClick={() => setView('list')} className="absolute top-4 right-4 p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white">
+                                <X size={24} />
+                            </button>
+
+                            <div className="mt-10 mb-8 text-center">
+                                <div className="w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-800">
+                                    <FileText size={32} className="text-emerald-500" />
+                                </div>
+                                <h2 className="text-2xl font-bold text-white">Kontrollkort</h2>
+                                <div className="text-emerald-500 font-mono">{selectedItem.serialNumber}</div>
+                            </div>
+
+                            <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 space-y-6">
+                                <div className="grid grid-cols-2 gap-6">
+                                    <div>
+                                        <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Artikel</label>
+                                        <div className="font-mono text-white">{selectedItem.articleNumber}</div>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Ritning</label>
+                                        <div className="font-mono text-white">{selectedItem.drawingNumber}</div>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Datum</label>
+                                        <div className="text-slate-300 text-sm">{new Date(selectedItem.completedAt).toLocaleString()}</div>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Kontrollant</label>
+                                        <div className="text-slate-300 text-sm">{selectedItem.controller}</div>
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-4 text-xs text-slate-400 mb-6 font-mono">
-                                    <div>
-                                        <span className="block text-slate-500 mb-1">Artikel</span>
-                                        <span className="text-slate-200 text-sm">{selectedHistoryItem.articleNumber}</span>
-                                    </div>
-                                    <div>
-                                        <span className="block text-slate-500 mb-1">Ritning</span>
-                                        <span className="text-slate-200 text-sm">{selectedHistoryItem.drawingNumber}</span>
-                                    </div>
-                                    <div>
-                                        <span className="block text-slate-500 mb-1">Kontrollant</span>
-                                        <span className="text-slate-200">{selectedHistoryItem.controller}</span>
-                                    </div>
-                                    <div>
-                                        <span className="block text-slate-500 mb-1">Datum</span>
-                                        <span className="text-slate-200">{new Date(selectedHistoryItem.completedAt).toLocaleString()}</span>
-                                    </div>
-                                </div>
+                                <div className="h-px bg-slate-800 my-4"></div>
 
                                 <div className="space-y-2">
-                                    {selectedHistoryItem.results.map(r => (
-                                        <div key={r.id} className="bg-slate-900/50 p-3 rounded border border-slate-700/50 flex items-center justify-between">
+                                    {selectedItem.results?.map((res, i) => (
+                                        <div key={i} className="flex justify-between items-center py-2 border-b border-slate-800/50 last:border-0">
                                             <div className="flex items-center gap-3">
-                                                <div className={`w-2 h-2 rounded-full ${r.status === 'OK' ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
-                                                <span className="font-mono text-slate-400 text-xs">{r.id}</span>
+                                                <span className={`w-2 h-2 rounded-full ${res.status === 'OK' ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+                                                <span className="font-mono text-xs text-slate-400">{res.id}</span>
                                             </div>
-
                                             <div className="text-right">
-                                                <div className={`font-mono font-bold ${r.status === 'OK' ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                    {r.measured}
-                                                </div>
-                                                <div className="text-[10px] text-slate-600">
-                                                    Nom: {r.def?.nominal}
-                                                </div>
+                                                <div className={`font-mono font-bold ${res.status === 'OK' ? 'text-white' : 'text-red-400'}`}>{res.measured}</div>
+                                                <div className="text-[10px] text-slate-600">Nom: {res.def?.nominal}</div>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
-
-                                <div className="mt-6 pt-4 border-t border-slate-700">
-                                    <button onClick={() => setView('history')} className="w-full py-3 bg-slate-700 rounded-lg text-slate-200 text-sm font-medium">Stäng</button>
-                                </div>
                             </div>
-                        </motion.div>
+                        </div>
                     )}
 
-                    {view === 'measure' && selectedRequest && (
+                    {/* TAB: RITNINGAR (DRAWINGS) */}
+                    {currentTab === 'drawings' && (
                         <motion.div
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: 20 }}
-                            className="space-y-6"
+                            key="drawings"
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="space-y-4"
                         >
-                            <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
-                                <div className="text-xs text-slate-500 uppercase">Artikel</div>
-                                <div className="text-2xl font-bold">{selectedRequest.article}</div>
-                                <div className="text-sm text-slate-400 font-mono mt-1">{selectedRequest.drawing}</div>
+                            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <FileImage size={14} /> Ritningsarkiv
+                            </h2>
+                            <div className="bg-slate-900 border border-slate-800 rounded-lg p-2 flex items-center gap-2 text-slate-400 transition-all focus-within:border-emerald-500/50 focus-within:text-emerald-500">
+                                <Search size={18} />
+                                <input type="text" placeholder="Sök ritning..." className="bg-transparent border-none outline-none w-full text-white placeholder:text-slate-600" />
                             </div>
 
-                            <div className="space-y-6">
-                                {Object.entries(measurements).map(([id, data]) => (
-                                    <div key={id} className="bg-slate-900 p-4 rounded-xl border border-slate-800">
-                                        <div className="flex justify-between items-end mb-2">
-                                            <label className="text-sm font-medium text-slate-400 flex items-center gap-2">
-                                                <Ruler size={14} /> {id}
-                                                <span className="text-xs bg-slate-800 px-1 rounded text-slate-500">
-                                                    Nom: {data.def.nominal}
-                                                </span>
-                                            </label>
-                                            <div className="text-[10px] text-slate-500 font-mono">
-                                                {data.def.tolLo} / +{data.def.tolUp}
-                                            </div>
-                                        </div>
-                                        <div className="relative">
-                                            <input
-                                                type="number"
-                                                value={data.measured}
-                                                onChange={(e) => handleMeasurementUpdate(id, e.target.value)}
-                                                className={`w-full border rounded-xl p-4 text-xl font-mono outline-none transition-colors
-                                                ${data.status === 'OK' ? 'bg-emerald-900/20 border-emerald-500/50 text-emerald-400' : ''}
-                                                ${data.status === 'FAIL' ? 'bg-red-900/20 border-red-500/50 text-red-400' : ''}
-                                                ${data.status === 'NEUTRAL' ? 'bg-slate-950 border-slate-700' : ''}
-                                                `}
-                                                placeholder="0.00"
-                                            />
-                                            <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                                                {data.status === 'OK' && <CheckCircle className="text-emerald-500" />}
-                                                {data.status === 'FAIL' && <AlertCircle className="text-red-500" />}
-                                            </div>
-                                        </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                {drawings.map(d => (
+                                    <div key={d.id} className="bg-slate-900 border border-slate-800 p-3 rounded-xl aspect-square flex flex-col items-center justify-center text-center hover:bg-slate-800 active:scale-95 transition-all">
+                                        <FileText size={32} className="text-slate-600 mb-2" />
+                                        <div className="font-mono text-emerald-400 font-bold text-sm">{d.number}</div>
+                                        <div className="text-[10px] text-slate-500">{d.article}</div>
                                     </div>
                                 ))}
-                            </div>
-
-                            <div className="pt-4">
-                                <label className="block text-sm font-medium text-slate-400 mb-2">Signatur</label>
-                                <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                                    {['Niklas Jalvemyr', 'Olle Ljungberg'].map(sig => (
-                                        <button
-                                            key={sig}
-                                            onClick={() => setSignature(sig)}
-                                            className={`px-4 py-3 rounded-xl font-bold text-sm whitespace-nowrap transition-all border ${signature === sig
-                                                ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/30'
-                                                : 'bg-slate-800 border-slate-700 text-slate-400'
-                                                }`}
-                                        >
-                                            {sig.split(' ')[0]} {/* Show First Name */}
-                                        </button>
-                                    ))}
-                                </div>
-                                {signature && <div className="text-xs text-center text-blue-400 mt-1">Vald: {signature}</div>}
+                                {drawings.length === 0 && <div className="col-span-2 text-center text-slate-600 py-10">Inga ritningar indexerade</div>}
                             </div>
                         </motion.div>
                     )}
 
-                    {/* Success View */}
-                    {view === 'success' && (
-                        <motion.div
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            className="flex flex-col items-center justify-center h-[60vh] text-center"
-                        >
-                            <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mb-6 text-emerald-500">
-                                <CheckCircle size={40} />
-                            </div>
-                            <h2 className="text-2xl font-bold text-white mb-2">Klart!</h2>
-                            <p className="text-slate-400">Rapport skickad till Arkivet.</p>
-                        </motion.div>
-                    )}
                 </AnimatePresence>
             </div>
 
-            {/* Bottom Action Bar */}
-            {view === 'measure' && (
-                <div className="fixed bottom-0 left-0 right-0 p-4 bg-slate-900/90 backdrop-blur border-t border-slate-800 pb-8">
-                    <button
-                        onClick={handleSubmit}
-                        disabled={!signature || Object.values(measurements).some(m => !m.measured)}
-                        className="w-full bg-blue-600 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                     >
-                        {loading ? <Activity className="animate-spin" /> : <Send size={20} />}
-                        Skicka Rapport
-                    </button>
-                </div>
-            )}
-        </div>
+            {loading ? <Activity className="animate-spin" /> : <Send size={20} />}
+            Skicka Rapport
+        </button>
+                </div >
+            )
+}
+        </div >
     );
 }
