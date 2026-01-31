@@ -3,7 +3,10 @@ import { Ruler, FileText, CheckCircle, User, ArrowLeft, Send } from 'lucide-reac
 import { motion, AnimatePresence } from 'framer-motion';
 
 // API Configuration
-const API_URL = import.meta.env.VITE_API_URL || 'http://oso80gcwkkwgogocc8wsowco.109.205.176.58.sslip.io';
+// Use current protocol to avoid Mixed Content errors (http vs https)
+const SERVER_DOMAIN = 'oso80gcwkkwgogocc8wsowco.109.205.176.58.sslip.io';
+const PROTOCOL = window.location.protocol;
+const API_URL = import.meta.env.VITE_API_URL || `${PROTOCOL}//${SERVER_DOMAIN}`;
 
 export default function App() {
     const [view, setView] = useState('list'); // 'list', 'measure', 'success'
@@ -120,7 +123,8 @@ export default function App() {
                                                 const res = await fetch(`${API_URL}/api/orders`);
                                                 if (res.ok) setRequests(await res.json());
                                             } catch (err) {
-                                                alert("Kunde inte skapa testorder: " + err.message);
+                                                console.error("Test order failed:", err);
+                                                alert(`Kunde inte skapa testorder. \nFel: ${err.message}\nURL: ${API_URL}/api/parse`);
                                             }
                                         }}
                                         className="text-xs bg-slate-800 hover:bg-slate-700 text-blue-400 px-3 py-2 rounded-lg border border-slate-700 transition-colors"
