@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Ruler, FileText, CheckCircle, User, ArrowLeft, Send, Activity, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import io from 'socket.io-client';
 
 // API Configuration
 const SERVER_DOMAIN = 'oso80gcwkkwgogocc8wsowco.109.205.176.58.sslip.io';
@@ -16,65 +17,57 @@ export default function App() {
     const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
     const [signature, setSignature] = useState('');
 
+    // Socket State
+    const [socket, setSocket] = useState(null);
+
     // Dynamic Measurements State
-    // keys: paramId, values: { measured: string, status: 'OK'|'FAIL' }
     const [measurements, setMeasurements] = useState({});
 
-    // Fetch orders
+    // Fetch orders via Socket.io
     useEffect(() => {
-        const fetchOrders = async () => {
-            try {
-                const response = await fetch(`${API_URL}/api/orders`);
-                if (response.ok) {
-                    const data = await response.json();
+        const newSocket = io(API_URL);
 
-                    const pending = [];
-                    const done = [];
+        newSocket.on('connect', () => {
+            console.log("Connected to Server");
+        });
 
-                    data.forEach(order => {
-                        const xml = order.rawData || '';
-                        if (xml.includes('<MeasurementReport')) {
-                            done.push(order);
-                        } else if (xml.includes('<MeasurementRequest') || xml.includes('<Order>')) {
-                            pending.push(order);
-                        }
-                    });
+        // Initial State Sync
+        newSocket.on('init_state', (data) => {
+            setRequests(data.activeOrders);
+            setHistory(data.archivedOrders);
+        });
 
-                    // Sort: Newest first
-                    pending.sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
-                    done.sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
+        // Real-time Updates
+        newSocket.on('order_created', (newOrder) => {
+            setRequests(prev => [newOrder, ...prev]);
+            // Optional: Notification sound/vibration
+        });
 
-                    setRequests(pending);
-                    setHistory(done);
-                }
-            } catch (err) {
-                console.error("Failed to fetch orders:", err);
-            }
-        };
+        newSocket.on('order_completed', (completedOrder) => {
+            // Move from Requests to History (if we still have it in requests locally)
+            setRequests(prev => prev.filter(r => r.id !== completedOrder.id));
+            setHistory(prev => [completedOrder, ...prev]);
+        });
 
-        fetchOrders();
-        // Poll every 5 seconds
-        const interval = setInterval(fetchOrders, 3000); // Faster poll
-        return () => clearInterval(interval);
+        // Full list refresh (if needed)
+        newSocket.on('active_orders_update', (orders) => {
+            setRequests(orders);
+        });
+
+        setSocket(newSocket);
+
+        return () => newSocket.close();
     }, []);
 
     const handleSelect = (req) => {
-        // Parse Definitions from XML
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(req.rawData, "text/xml");
+        // Definitions are now ALREADY PARSED in the JSON object!
+        // No XML parsing needed here.
+        const definitions = req.definitions || [];
 
-        const params = Array.from(xmlDoc.querySelectorAll('Param')).map(p => ({
-            id: p.getAttribute('ID'),
-            nominal: parseFloat(p.getAttribute('Nominal')),
-            tolUp: parseFloat(p.getAttribute('TolUp')),
-            tolLo: parseFloat(p.getAttribute('TolLo')),
-            gd: p.getAttribute('GD')
-        }));
-
-        // If no params found, create a default one (legacy support)
-        const definitions = params.length > 0 ? params : [
-            { id: 'M1', nominal: 0, tolUp: 0.1, tolLo: -0.1, gd: 'none' }
-        ];
+        // Fallback if no definitions (legacy support)
+        if (definitions.length === 0) {
+            console.warn("No definitions found for order", req.id);
+        }
 
         const initialMeasurements = {};
         definitions.forEach(d => {
@@ -93,10 +86,8 @@ export default function App() {
         let status = 'NEUTRAL';
 
         if (!isNaN(numVal)) {
-            const diff = numVal - def.nominal;
-            // Round to sensible precision for check
-            // Check if within lower and upper
-            if (diff <= def.tolUp && diff >= def.tolLo) {
+            const diff = numVal - parseFloat(def.nominal);
+            if (diff <= parseFloat(def.upperTol) && diff >= parseFloat(def.lowerTol)) {
                 status = 'OK';
             } else {
                 status = 'FAIL';
@@ -110,51 +101,35 @@ export default function App() {
     };
 
     const handleSubmit = async () => {
-        if (!selectedRequest) return;
+        if (!selectedRequest || !socket) return;
 
         setLoading(true);
-        try {
-            // Construct MeasurementReport XML
-            const timestamp = new Date().toISOString();
 
-            // Map measurements to XML nodes
-            const resultsXml = Object.entries(measurements).map(([id, data]) => `
-    <Parameter id="${id}">
-      <Nominal>${data.def.nominal}</Nominal>
-      <Measured>${data.measured}</Measured>
-      <Status>${data.status}</Status>
-      <Tolerance upper="${data.def.tolUp}" lower="${data.def.tolLo}" />
-    </Parameter>`).join('');
+        // Prepare Results Array for JSON
+        const results = Object.entries(measurements).map(([id, data]) => ({
+            id: id,
+            measured: data.measured,
+            status: data.status,
+            def: data.def // Include definition for easy XML generation on server
+        }));
 
-            const xmlReport = `
-<MeasurementReport timestamp="${timestamp}">
-  <RequestId>${selectedRequest.id}</RequestId>
-  <ArticleNumber>${selectedRequest.article}</ArticleNumber>
-  <DrawingNumber>${selectedRequest.drawing}</DrawingNumber>
-  <Controller>${signature}</Controller>
-  <Results>${resultsXml}
-  </Results>
-</MeasurementReport>`;
+        const payload = {
+            id: selectedRequest.id,
+            controller: signature,
+            results: results
+        };
 
-            // Send to Server
-            await fetch(`${API_URL}/api/parse`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/xml' },
-                body: xmlReport
-            });
+        // Emit Socket Event
+        socket.emit('submit_measurement', payload);
 
-            setView('success');
-            setTimeout(() => {
-                setView('list');
-                setSelectedRequest(null);
-                setSignature('');
-            }, 2000);
-        } catch (err) {
-            console.error(err);
-            alert("Kunde inte skicka: " + err.message);
-        } finally {
-            setLoading(false);
-        }
+        // Optimistic UI Update
+        setView('success');
+        setTimeout(() => {
+            setView('list');
+            setSelectedRequest(null);
+            setSignature('');
+        }, 1500);
+        setLoading(false);
     };
 
     return (
@@ -268,44 +243,23 @@ export default function App() {
                                 <div className="text-slate-500 text-center py-10 italic">Inget arkiverat än...</div>
                             )}
                             {history.map(req => {
-                                // Extract basic info from rawData XML since it's a Report now
-                                const parser = new DOMParser();
-                                const doc = parser.parseFromString(req.rawData, "text/xml");
-                                const status = doc.querySelector('Status')?.textContent || 'OK'; // Overall status? Needs logic.
-                                const date = doc.documentElement.getAttribute('timestamp') || req.receivedAt;
-                                const controller = doc.querySelector('Controller')?.textContent || 'Okänd';
-
+                                // Simplified for JSON data (no XML parsing needed!)
                                 return (
                                     <div
                                         key={req.id}
                                         onClick={() => {
-                                            // Parse details for View
-                                            const results = Array.from(doc.querySelectorAll('Parameter')).map(p => ({
-                                                id: p.getAttribute('id'),
-                                                nominal: p.querySelector('Nominal')?.textContent,
-                                                measured: p.querySelector('Measured')?.textContent,
-                                                status: p.querySelector('Status')?.textContent,
-                                                tolUp: p.querySelector('Tolerance')?.getAttribute('upper'),
-                                                tolLo: p.querySelector('Tolerance')?.getAttribute('lower'),
-                                            }));
-
-                                            setSelectedHistoryItem({
-                                                ...req,
-                                                controller,
-                                                timestamp: date,
-                                                results
-                                            });
+                                            setSelectedHistoryItem(req);
                                             setView('history-detail');
                                         }}
                                         className="bg-slate-900/50 p-4 rounded-xl border border-slate-800 active:bg-slate-800 transition-all shadow-sm"
                                     >
                                         <div className="flex justify-between items-center mb-1">
-                                            <span className="font-mono text-emerald-400 text-xs font-bold">{req.article}</span>
-                                            <span className="text-[10px] text-slate-500">{new Date(date).toLocaleDateString()}</span>
+                                            <span className="font-mono text-emerald-400 text-xs font-bold">{req.articleNumber}</span>
+                                            <span className="text-[10px] text-slate-500">{new Date(req.completedAt || req.timestamp).toLocaleDateString()}</span>
                                         </div>
                                         <div className="text-xs text-slate-400 flex justify-between">
-                                            <span>{req.drawing}</span>
-                                            <span className="text-slate-500">{controller}</span>
+                                            <span>{req.drawingNumber}</span>
+                                            <span className="text-slate-500">{req.controller}</span>
                                         </div>
                                     </div>
                                 );
@@ -340,11 +294,11 @@ export default function App() {
                                 <div className="grid grid-cols-2 gap-4 text-xs text-slate-400 mb-6 font-mono">
                                     <div>
                                         <span className="block text-slate-500 mb-1">Artikel</span>
-                                        <span className="text-slate-200 text-sm">{selectedHistoryItem.article}</span>
+                                        <span className="text-slate-200 text-sm">{selectedHistoryItem.articleNumber}</span>
                                     </div>
                                     <div>
                                         <span className="block text-slate-500 mb-1">Ritning</span>
-                                        <span className="text-slate-200 text-sm">{selectedHistoryItem.drawing}</span>
+                                        <span className="text-slate-200 text-sm">{selectedHistoryItem.drawingNumber}</span>
                                     </div>
                                     <div>
                                         <span className="block text-slate-500 mb-1">Kontrollant</span>
@@ -352,7 +306,7 @@ export default function App() {
                                     </div>
                                     <div>
                                         <span className="block text-slate-500 mb-1">Datum</span>
-                                        <span className="text-slate-200">{new Date(selectedHistoryItem.timestamp).toLocaleString()}</span>
+                                        <span className="text-slate-200">{new Date(selectedHistoryItem.completedAt).toLocaleString()}</span>
                                     </div>
                                 </div>
 
@@ -369,7 +323,7 @@ export default function App() {
                                                     {r.measured}
                                                 </div>
                                                 <div className="text-[10px] text-slate-600">
-                                                    Nom: {r.nominal} ({r.tolLo}/{String(r.tolUp).startsWith('+') ? '' : '+'}{r.tolUp})
+                                                    Nom: {r.def?.nominal}
                                                 </div>
                                             </div>
                                         </div>
