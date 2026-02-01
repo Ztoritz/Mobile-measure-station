@@ -29,37 +29,9 @@ export default function App() {
     // Dynamic Measurements State
     const [measurements, setMeasurements] = useState({});
 
-    // Operator Logic (Mobile)
+    // Operator Logic (Mobile - Read Only from Server)
     const [isSigningModalOpen, setIsSigningModalOpen] = useState(false);
-    const [operatorList, setOperatorList] = useState(() => {
-        const saved = localStorage.getItem('simAkers_operators_mobile');
-        return saved ? JSON.parse(saved) : ['Niklas Jalvemyr', 'Olle Ljungberg'];
-    });
-    const [newOperatorInput, setNewOperatorInput] = useState('');
-
-    // Add Operator
-    const handleAddOperator = () => {
-        if (!newOperatorInput.trim()) return;
-        if (operatorList.includes(newOperatorInput.trim())) {
-            alert("Operatör finns redan!");
-            return;
-        }
-        const newList = [...operatorList, newOperatorInput.trim()].sort();
-        setOperatorList(newList);
-        localStorage.setItem('simAkers_operators_mobile', JSON.stringify(newList));
-        setNewOperatorInput('');
-        setSignature(newOperatorInput.trim());
-    };
-
-    // Remove Operator
-    const handleRemoveOperator = (opName) => {
-        if (confirm(`Ta bort ${opName}?`)) {
-            const newList = operatorList.filter(o => o !== opName);
-            setOperatorList(newList);
-            localStorage.setItem('simAkers_operators_mobile', JSON.stringify(newList));
-            if (signature === opName) setSignature('');
-        }
-    };
+    const [operatorList, setOperatorList] = useState([]); // Master List from Server
 
     // Fetch orders via Socket.io
     useEffect(() => {
@@ -73,6 +45,7 @@ export default function App() {
         newSocket.on('init_state', (data) => {
             setRequests(data.activeOrders);
             setHistory(data.archivedOrders);
+            if (data.operators) setOperatorList(data.operators); // Init operators
             updateDrawingsList([...data.activeOrders, ...data.archivedOrders]);
         });
 
@@ -93,6 +66,10 @@ export default function App() {
                 updateDrawingsList([...requests, ...updated]);
                 return updated;
             });
+        });
+
+        newSocket.on('operators_updated', (ops) => {
+            setOperatorList(ops);
         });
 
         newSocket.on('active_orders_update', (orders) => {
@@ -450,26 +427,8 @@ export default function App() {
                                                 <button onClick={() => setIsSigningModalOpen(false)} className="text-slate-500 hover:text-white"><X /></button>
                                             </div>
 
-                                            {/* Add New Operator */}
-                                            <div className="flex gap-2">
-                                                <input
-                                                    type="text"
-                                                    placeholder="Nytt namn..."
-                                                    value={newOperatorInput}
-                                                    onChange={e => setNewOperatorInput(e.target.value)}
-                                                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
-                                                />
-                                                <button
-                                                    onClick={handleAddOperator}
-                                                    disabled={!newOperatorInput.trim()}
-                                                    className="bg-slate-800 hover:bg-slate-700 text-emerald-500 p-2 rounded-lg border border-slate-700 disabled:opacity-50"
-                                                >
-                                                    <Plus size={20} />
-                                                </button>
-                                            </div>
-
-                                            {/* Operator List */}
-                                            <div className="max-h-48 overflow-y-auto space-y-2 border border-slate-800 rounded-lg p-1 bg-slate-950/50">
+                                            {/* Operator List (Read Only) */}
+                                            <div className="max-h-64 overflow-y-auto space-y-2 border border-slate-800 rounded-lg p-1 bg-slate-950/50">
                                                 {operatorList.map((op, idx) => (
                                                     <div
                                                         key={idx}
@@ -477,12 +436,7 @@ export default function App() {
                                                         className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all ${signature === op ? 'bg-emerald-600 text-white' : 'bg-slate-800/50 text-slate-300 hover:bg-slate-800'}`}
                                                     >
                                                         <span className="font-medium">{op}</span>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); handleRemoveOperator(op); }}
-                                                            className={`p-1.5 rounded-full ${signature === op ? 'text-emerald-200 hover:bg-emerald-700' : 'text-slate-500 hover:bg-slate-700 hover:text-red-400'}`}
-                                                        >
-                                                            {signature === op ? <CheckCircle size={16} /> : <Trash2 size={16} />}
-                                                        </button>
+                                                        {signature === op && <CheckCircle size={16} className="text-emerald-200" />}
                                                     </div>
                                                 ))}
                                                 {operatorList.length === 0 && <div className="text-center text-slate-500 py-4 text-sm">Inga operatörer</div>}
