@@ -299,17 +299,19 @@ export default function App() {
                                 </div>
                             </div>
 
-                            {/* Submit Button - Floating with Backdrop Blur */}
-                            <div className="fixed bottom-24 left-0 right-0 p-4 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent z-40">
-                                <button
-                                    onClick={handleSubmit}
-                                    disabled={!signature || Object.values(measurements).some(m => m.measured === '')}
-                                    className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] text-slate-900 font-bold text-lg rounded-xl shadow-xl shadow-emerald-900/20 disabled:opacity-50 disabled:grayscale transition-all flex items-center justify-center gap-2"
-                                >
-                                    {loading ? <Activity className="animate-spin" /> : <Send size={20} />}
-                                    Skicka Rapport
-                                </button>
-                            </div>
+                            {/* Submit Button - Only visible AFTER signature */}
+                            {signature && (
+                                <div className="fixed bottom-24 left-0 right-0 p-4 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent z-40 animate-in slide-in-from-bottom-5 fade-in duration-300">
+                                    <button
+                                        onClick={handleSubmit}
+                                        disabled={!signature || Object.values(measurements).some(m => m.measured === '')}
+                                        className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] text-slate-900 font-bold text-lg rounded-xl shadow-xl shadow-emerald-900/20 disabled:opacity-50 disabled:grayscale transition-all flex items-center justify-center gap-2"
+                                    >
+                                        {loading ? <Activity className="animate-spin" /> : <Send size={20} />}
+                                        Skicka Rapport
+                                    </button>
+                                </div>
+                            )}
                         </motion.div>
                     )}
 
