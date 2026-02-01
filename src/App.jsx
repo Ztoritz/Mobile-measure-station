@@ -149,7 +149,7 @@ export default function App() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-200 font-sans pb-20 select-none">
+        <div className="min-h-screen bg-slate-950 text-slate-200 font-sans pb-32">
             {/* Header - Fixed Top */}
             <div className="fixed top-0 left-0 right-0 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 p-4 z-50 flex justify-between items-center shadow-lg">
                 <div>
@@ -217,7 +217,7 @@ export default function App() {
                         <motion.div
                             key="measure-detail"
                             initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 50, opacity: 0 }}
-                            className="pb-40"
+                            className="pb-64"
                         >
                             <button onClick={() => setView('list')} className="mb-4 flex items-center gap-2 text-slate-400 text-sm active:text-white">
                                 <ArrowLeft size={16} /> Tillbaka
