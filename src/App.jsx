@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Ruler, FileText, FileImage, User, CheckCircle, AlertCircle, Search, ChevronRight, X, Activity, Send, ArrowLeft } from 'lucide-react';
+import { Ruler, FileText, FileImage, User, CheckCircle, AlertCircle, Search, ChevronRight, X, Activity, Send, ArrowLeft, Trash2, UserCheck, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import io from 'socket.io-client';
 
@@ -28,6 +28,38 @@ export default function App() {
 
     // Dynamic Measurements State
     const [measurements, setMeasurements] = useState({});
+
+    // Operator Logic (Mobile)
+    const [isSigningModalOpen, setIsSigningModalOpen] = useState(false);
+    const [operatorList, setOperatorList] = useState(() => {
+        const saved = localStorage.getItem('simAkers_operators_mobile');
+        return saved ? JSON.parse(saved) : ['Niklas Jalvemyr', 'Olle Ljungberg'];
+    });
+    const [newOperatorInput, setNewOperatorInput] = useState('');
+
+    // Add Operator
+    const handleAddOperator = () => {
+        if (!newOperatorInput.trim()) return;
+        if (operatorList.includes(newOperatorInput.trim())) {
+            alert("Operatör finns redan!");
+            return;
+        }
+        const newList = [...operatorList, newOperatorInput.trim()].sort();
+        setOperatorList(newList);
+        localStorage.setItem('simAkers_operators_mobile', JSON.stringify(newList));
+        setNewOperatorInput('');
+        setSignature(newOperatorInput.trim());
+    };
+
+    // Remove Operator
+    const handleRemoveOperator = (opName) => {
+        if (confirm(`Ta bort ${opName}?`)) {
+            const newList = operatorList.filter(o => o !== opName);
+            setOperatorList(newList);
+            localStorage.setItem('simAkers_operators_mobile', JSON.stringify(newList));
+            if (signature === opName) setSignature('');
+        }
+    };
 
     // Fetch orders via Socket.io
     useEffect(() => {
@@ -140,8 +172,24 @@ export default function App() {
         }));
     };
 
+    const handleDeleteOrder = (orderId) => {
+        if (!confirm('Radera denna rapport permanent?')) return;
+
+        // Optimistic UI update
+        setHistory(prev => prev.filter(h => h.id !== orderId));
+        setRequests(prev => prev.filter(r => r.id !== orderId)); // Just in case
+
+        if (socket) {
+            socket.emit('delete_order', orderId);
+        }
+    };
+
+    const handleOpenSigning = () => {
+        setIsSigningModalOpen(true);
+    };
+
     const handleSubmit = async () => {
-        if (!selectedItem || !socket) return;
+        if (!selectedItem || !socket || !signature) return;
 
         setLoading(true);
 
@@ -162,8 +210,11 @@ export default function App() {
 
         // UI Reset
         setView('list'); // Back to list within 'measure' tab
+        // UI Reset
+        setView('list'); // Back to list within 'measure' tab
         setSelectedItem(null);
         setSignature('');
+        setIsSigningModalOpen(false); // Close modal
         setLoading(false);
     };
 
@@ -368,43 +419,90 @@ export default function App() {
                                 })}
                             </div>
 
-                            {/* Signature */}
-                            <div className="mt-8 bg-slate-900 p-4 rounded-xl border border-slate-800">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 block">Signera Mätning</label>
-                                <div className="relative">
-                                    <select
-                                        value={signature}
-                                        onChange={(e) => setSignature(e.target.value)}
-                                        className="w-full p-3 pl-10 rounded-lg border bg-slate-950 border-slate-800 text-slate-200 text-sm font-medium appearance-none outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
-                                    >
-                                        <option value="" disabled>Välj kontrollant...</option>
-                                        {['Niklas Jalvemyr', 'Olle Ljungberg'].map(name => {
-                                            const initials = name.split(' ').map(n => n[0]).join('');
-                                            return (
-                                                <option key={initials} value={initials}>
-                                                    {name}
-                                                </option>
-                                            );
-                                        })}
-                                    </select>
-                                    <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                                    <ChevronRight size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none rotate-90" />
-                                </div>
+                            {/* Desktop/Mobile Parity: Signing Modal instead of inline */}
+                            {/* Trigger Button */}
+                            <div className="fixed bottom-24 left-0 right-0 p-4 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent z-40 animate-in slide-in-from-bottom-5 fade-in duration-300">
+                                <button
+                                    onClick={handleOpenSigning}
+                                    disabled={Object.values(measurements).some(m => m.measured === '')}
+                                    className="w-full py-4 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-bold text-lg rounded-xl shadow-xl shadow-blue-900/20 disabled:opacity-50 disabled:grayscale transition-all flex items-center justify-center gap-2"
+                                >
+                                    <UserCheck size={20} />
+                                    Signera & Skicka
+                                </button>
                             </div>
 
-                            {/* Submit Button - Only visible AFTER signature */}
-                            {signature && (
-                                <div className="fixed bottom-24 left-0 right-0 p-4 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent z-40 animate-in slide-in-from-bottom-5 fade-in duration-300">
-                                    <button
-                                        onClick={handleSubmit}
-                                        disabled={!signature || Object.values(measurements).some(m => m.measured === '')}
-                                        className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] text-slate-900 font-bold text-lg rounded-xl shadow-xl shadow-emerald-900/20 disabled:opacity-50 disabled:grayscale transition-all flex items-center justify-center gap-2"
+                            {/* Signing Modal */}
+                            <AnimatePresence>
+                                {isSigningModalOpen && (
+                                    <motion.div
+                                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                                        className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
                                     >
-                                        {loading ? <Activity className="animate-spin" /> : <Send size={20} />}
-                                        Skicka Rapport
-                                    </button>
-                                </div>
-                            )}
+                                        <motion.div
+                                            initial={{ y: 100 }} animate={{ y: 0 }} exit={{ y: 100 }}
+                                            className="bg-slate-900 w-full max-w-sm rounded-2xl border border-slate-800 p-6 shadow-2xl space-y-6"
+                                        >
+                                            <div className="flex justify-between items-center">
+                                                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                                                    <UserCheck className="text-emerald-500" /> Signera
+                                                </h3>
+                                                <button onClick={() => setIsSigningModalOpen(false)} className="text-slate-500 hover:text-white"><X /></button>
+                                            </div>
+
+                                            {/* Add New Operator */}
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Nytt namn..."
+                                                    value={newOperatorInput}
+                                                    onChange={e => setNewOperatorInput(e.target.value)}
+                                                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
+                                                />
+                                                <button
+                                                    onClick={handleAddOperator}
+                                                    disabled={!newOperatorInput.trim()}
+                                                    className="bg-slate-800 hover:bg-slate-700 text-emerald-500 p-2 rounded-lg border border-slate-700 disabled:opacity-50"
+                                                >
+                                                    <Plus size={20} />
+                                                </button>
+                                            </div>
+
+                                            {/* Operator List */}
+                                            <div className="max-h-48 overflow-y-auto space-y-2 border border-slate-800 rounded-lg p-1 bg-slate-950/50">
+                                                {operatorList.map((op, idx) => (
+                                                    <div
+                                                        key={idx}
+                                                        onClick={() => setSignature(op)}
+                                                        className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all ${signature === op ? 'bg-emerald-600 text-white' : 'bg-slate-800/50 text-slate-300 hover:bg-slate-800'}`}
+                                                    >
+                                                        <span className="font-medium">{op}</span>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleRemoveOperator(op); }}
+                                                            className={`p-1.5 rounded-full ${signature === op ? 'text-emerald-200 hover:bg-emerald-700' : 'text-slate-500 hover:bg-slate-700 hover:text-red-400'}`}
+                                                        >
+                                                            {signature === op ? <CheckCircle size={16} /> : <Trash2 size={16} />}
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                                {operatorList.length === 0 && <div className="text-center text-slate-500 py-4 text-sm">Inga operatörer</div>}
+                                            </div>
+
+                                            {/* Action Buttons */}
+                                            <div className="pt-2">
+                                                <button
+                                                    onClick={handleSubmit}
+                                                    disabled={!signature}
+                                                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white rounded-xl font-bold font-mono text-lg shadow-lg flex items-center justify-center gap-2 transition-all"
+                                                >
+                                                    {loading ? <Activity className="animate-spin" /> : <Send size={20} />}
+                                                    SKICKA
+                                                </button>
+                                            </div>
+                                        </motion.div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </motion.div>
                     )}
 
@@ -434,6 +532,16 @@ export default function App() {
                                             {item.status || 'OK'}
                                         </div>
                                         <div className="text-[10px] text-slate-500 mt-1">{new Date(item.completedAt).toLocaleDateString()}</div>
+
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDeleteOrder(item.id);
+                                            }}
+                                            className="mt-2 p-2 text-slate-600 hover:text-red-400 active:bg-slate-800 rounded-full"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
                                     </div>
                                 </div>
                             ))}
