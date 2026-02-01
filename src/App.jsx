@@ -104,28 +104,29 @@ export default function App() {
 
     const handleMeasurementUpdate = (id, value) => {
         const def = measurements[id].def;
-        // Sanitize all inputs: remove spaces, replace commas with dots (global)
-        const sanitize = (val) => String(val).replace(/\s/g, '').replace(/,/g, '.');
-        const numVal = parseFloat(sanitize(value));
+
+        // Helper: Swedish Float Parsing (consistent with Desktop)
+        const parseSwedishFloat = (val) => {
+            if (!val) return NaN;
+            const clean = String(val).replace(/\s/g, '').replace(/,/g, '.');
+            return parseFloat(clean);
+        };
+
+        const val = parseSwedishFloat(value);
+        const nom = parseSwedishFloat(def.nominal);
+        const upper = parseSwedishFloat(def.upperTol) || 0; // e.g. 0.1
+        const lower = parseSwedishFloat(def.lowerTol) || 0; // e.g. -0.1
+
+        // Calculate Limits (Nominal + Deviation)
+        // Example: 100 + (-0.1) = 99.9
+        const minLimit = nom + lower;
+        const maxLimit = nom + upper;
 
         let status = 'NEUTRAL';
 
-        if (!isNaN(numVal)) {
-            const diff = numVal - parseFloat(sanitize(def.nominal));
-
-            // Remove Math.abs constraint:
-            // "Lower" value is subtracted. "Upper" value is added.
-            // This is relative to difference (Upper Gap, Lower Gap).
-            // Equivalent to: Measured >= (Nominal - Lower)  =>  Measured - Nominal >= -Lower  =>  Diff >= -Lower.
-
-            const upperLimit = parseFloat(sanitize(def.upperTol)) || 0;
-            const lowerLimit = parseFloat(sanitize(def.lowerTol)) || 0;
-
-            // Klockren V3: Pure Addition logic.
-            // Diff must be >= LowerLimit. (e.g. Diff >= -0.1).
-            // This assumes LowerLimit input includes the negative sign.
-
-            if (diff <= upperLimit && diff >= lowerLimit) {
+        if (!isNaN(val) && !isNaN(minLimit) && !isNaN(maxLimit)) {
+            // Use epsilon for float precision safety
+            if (val >= minLimit - 0.000001 && val <= maxLimit + 0.000001) {
                 status = 'OK';
             } else {
                 status = 'FAIL';
@@ -260,36 +261,106 @@ export default function App() {
                             <div className="space-y-4">
                                 {selectedItem.definitions?.map(def => {
                                     const state = measurements[def.id];
+
+                                    // Helper (Local to render loop)
+                                    const parseSwedishFloat = (val) => {
+                                        if (!val) return NaN;
+                                        const clean = String(val).replace(/\s/g, '').replace(/,/g, '.');
+                                        return parseFloat(clean);
+                                    };
+
+                                    const nom = parseSwedishFloat(def.nominal);
+                                    const lower = parseSwedishFloat(def.lowerTol) || 0;
+                                    const upper = parseSwedishFloat(def.upperTol) || 0;
+                                    const minLimit = nom + lower;
+                                    const maxLimit = nom + upper;
+
+                                    const GDT_INFO = {
+                                        'none': { s: '-', t: 'Ingen formtolerans' },
+                                        'position': { s: '⌖', t: 'Position' },
+                                        'flatness': { s: '⏥', t: 'Planhet' },
+                                        'perpendicularity': { s: '⟂', t: 'Vinkelräthet' },
+                                        'parallelism': { s: '∥', t: 'Parallellitet' },
+                                        'concentricity': { s: '◎', t: 'Koncentricitet' },
+                                        'cylindricity': { s: '⌭', t: 'Cylindricitet' },
+                                        'roundness': { s: '○', t: 'Rundhet' },
+                                        'straightness': { s: '⏤', t: 'Rakhet' },
+                                        'profile_surface': { s: '⌓', t: 'Ytprofil' },
+                                        'runout': { s: '↗', t: 'Kast' }
+                                    };
+                                    const gdtInfo = GDT_INFO[def.gdtType] || GDT_INFO['none'];
+
                                     return (
                                         <div key={def.id} className={`p-4 rounded-xl border transition-all ${state.status === 'OK' ? 'bg-emerald-950/20 border-emerald-500/30' : state.status === 'FAIL' ? 'bg-red-950/20 border-red-500/30' : 'bg-slate-900 border-slate-800'}`}>
-                                            <div className="flex justify-between items-center mb-3">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center font-mono text-xs font-bold text-slate-400 border border-slate-700">
-                                                        {def.id}
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div className="flex items-start gap-4">
+                                                    {/* ID & GDT */}
+                                                    <div className="flex flex-col items-center gap-1">
+                                                        <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center font-mono text-xs font-bold text-slate-400 border border-slate-700">
+                                                            {def.id}
+                                                        </div>
+                                                        <span className="text-2xl font-bold text-slate-200" title={gdtInfo.t}>
+                                                            {gdtInfo.s}
+                                                        </span>
                                                     </div>
+
+                                                    {/* Details */}
                                                     <div>
-                                                        <div className="text-sm font-medium text-slate-300">
-                                                            {def.description || (def.gdtType !== 'none' ? def.gdtType : 'Dimension')}
+                                                        <div className="text-sm font-medium text-slate-300 mb-1">
+                                                            {def.description || gdtInfo.t}
                                                         </div>
-                                                        <div className="text-sm text-slate-400 font-mono mt-1">
-                                                            Nom: <span className="text-slate-200 font-bold">{def.nominal}</span> <span className="text-slate-500 ml-1">({def.lowerTol} / {def.upperTol})</span>
+                                                        <div className="text-sm text-slate-400 font-mono">
+                                                            Nom: <span className="text-slate-200 font-bold">{def.nominal}</span>
+                                                            <span className="text-slate-500 ml-1">({def.lowerTol} / {def.upperTol})</span>
                                                         </div>
+                                                        {/* Calculated Limits */}
+                                                        {!isNaN(minLimit) && !isNaN(maxLimit) && (
+                                                            <div className="text-xs font-mono text-emerald-400 mt-1 bg-emerald-950/30 px-2 py-0.5 rounded inline-block border border-emerald-500/20">
+                                                                Gränser: {minLimit.toFixed(2)} - {maxLimit.toFixed(2)}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
-                                                {state.status === 'OK' && <CheckCircle size={20} className="text-emerald-500" />}
-                                                {state.status === 'FAIL' && <AlertCircle size={20} className="text-red-500" />}
+
+                                                {/* Status Icon */}
+                                                <div>
+                                                    {state.status === 'OK' && <CheckCircle size={24} className="text-emerald-500" />}
+                                                    {state.status === 'FAIL' && <AlertCircle size={24} className="text-red-500" />}
+                                                </div>
                                             </div>
 
-                                            <div className="relative">
-                                                <input
-                                                    type="number"
-                                                    inputMode="decimal"
-                                                    value={state.measured}
-                                                    onChange={(e) => handleMeasurementUpdate(def.id, e.target.value)}
-                                                    placeholder="Ange värde..."
-                                                    className={`w-full bg-slate-950 border text-center text-xl font-mono py-4 rounded-lg outline-none focus:ring-2 transition-all placeholder:text-slate-800 ${state.status === 'OK' ? 'border-emerald-500/50 text-emerald-400 focus:ring-emerald-500/20' : state.status === 'FAIL' ? 'border-red-500/50 text-red-400 focus:ring-red-500/20' : 'border-slate-700 text-white focus:border-blue-500'}`}
-                                                />
-                                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 text-xs font-bold">mm</span>
+                                            {/* Input Area with Steppers */}
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    className="w-12 h-14 bg-slate-800 rounded-lg border border-slate-700 text-slate-400 text-xl font-bold active:bg-slate-700 active:scale-95 transition-all"
+                                                    onClick={() => {
+                                                        const val = parseSwedishFloat(state.measured) || 0;
+                                                        handleMeasurementUpdate(def.id, (val - 0.1).toFixed(1).replace('.', ','));
+                                                    }}
+                                                >
+                                                    -
+                                                </button>
+
+                                                <div className="relative flex-1">
+                                                    <input
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        value={state.measured}
+                                                        onChange={(e) => handleMeasurementUpdate(def.id, e.target.value)}
+                                                        placeholder="Värde..."
+                                                        className={`w-full bg-slate-950 border text-center text-xl font-mono py-3.5 rounded-lg outline-none focus:ring-2 transition-all placeholder:text-slate-800 ${state.status === 'OK' ? 'border-emerald-500/50 text-emerald-400 focus:ring-emerald-500/20' : state.status === 'FAIL' ? 'border-red-500/50 text-red-400 focus:ring-red-500/20' : 'border-slate-700 text-white focus:border-blue-500'}`}
+                                                    />
+                                                </div>
+
+                                                <button
+                                                    className="w-12 h-14 bg-slate-800 rounded-lg border border-slate-700 text-slate-400 text-xl font-bold active:bg-slate-700 active:scale-95 transition-all"
+                                                    onClick={() => {
+                                                        const val = parseSwedishFloat(state.measured) || 0;
+                                                        handleMeasurementUpdate(def.id, (val + 0.1).toFixed(1).replace('.', ','));
+                                                    }}
+                                                >
+                                                    +
+                                                </button>
                                             </div>
                                         </div>
                                     );
