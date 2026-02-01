@@ -282,20 +282,24 @@ export default function App() {
                             {/* Signature */}
                             <div className="mt-8 bg-slate-900 p-4 rounded-xl border border-slate-800">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 block">Signera Mätning</label>
-                                <div className="grid grid-cols-2 gap-3">
-                                    {['Niklas Jalvemyr', 'Olle Ljungberg'].map(name => {
-                                        const initials = name.split(' ').map(n => n[0]).join('');
-                                        const isSelected = signature === initials;
-                                        return (
-                                            <button
-                                                key={initials}
-                                                onClick={() => setSignature(initials)}
-                                                className={`p-3 rounded-lg border text-sm font-medium flex items-center justify-center gap-2 transition-all ${isSelected ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-900/50' : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800'}`}
-                                            >
-                                                <User size={16} /> {name}
-                                            </button>
-                                        )
-                                    })}
+                                <div className="relative">
+                                    <select
+                                        value={signature}
+                                        onChange={(e) => setSignature(e.target.value)}
+                                        className="w-full p-3 pl-10 rounded-lg border bg-slate-950 border-slate-800 text-slate-200 text-sm font-medium appearance-none outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
+                                    >
+                                        <option value="" disabled>Välj kontrollant...</option>
+                                        {['Niklas Jalvemyr', 'Olle Ljungberg'].map(name => {
+                                            const initials = name.split(' ').map(n => n[0]).join('');
+                                            return (
+                                                <option key={initials} value={initials}>
+                                                    {name}
+                                                </option>
+                                            );
+                                        })}
+                                    </select>
+                                    <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                                    <ChevronRight size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none rotate-90" />
                                 </div>
                             </div>
 
