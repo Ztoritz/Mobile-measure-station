@@ -103,12 +103,19 @@ export default function App() {
 
     const handleMeasurementUpdate = (id, value) => {
         const def = measurements[id].def;
-        const numVal = parseFloat(value);
+        // Sanitize all inputs
+        const sanitize = (val) => String(val).replace(',', '.');
+        const numVal = parseFloat(sanitize(value));
+
         let status = 'NEUTRAL';
 
         if (!isNaN(numVal)) {
-            const diff = numVal - parseFloat(def.nominal);
-            if (diff <= parseFloat(def.upperTol) && diff >= parseFloat(def.lowerTol)) {
+            const diff = numVal - parseFloat(sanitize(def.nominal));
+            // Robust tolerance check: Upper +Abs, Lower -Abs
+            const upperLimit = Math.abs(parseFloat(sanitize(def.upperTol)));
+            const lowerLimit = -Math.abs(parseFloat(sanitize(def.lowerTol)));
+
+            if (diff <= upperLimit && diff >= lowerLimit) {
                 status = 'OK';
             } else {
                 status = 'FAIL';
