@@ -149,9 +149,9 @@ export default function App() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-200 font-sans pb-32">
-            {/* Header - Fixed Top */}
-            <div className="fixed top-0 left-0 right-0 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 p-4 z-50 flex justify-between items-center shadow-lg">
+        <div className="fixed inset-0 flex flex-col bg-slate-950 text-slate-200 font-sans">
+            {/* Header - Static Top */}
+            <div className="shrink-0 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 p-4 z-50 flex justify-between items-center shadow-lg">
                 <div>
                     <h1 className="font-bold text-lg tracking-tight text-white">Mätstation</h1>
                     <div className="text-[10px] text-emerald-500 font-mono tracking-wider">SIM ÅKERS MOBILE</div>
@@ -162,7 +162,7 @@ export default function App() {
             </div>
 
             {/* Main Content Area - Scrollable */}
-            <div className="pt-20 px-4 space-y-4">
+            <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4 scroll-smooth pb-32">
                 <AnimatePresence mode="wait">
 
                     {/* TAB: MÄTNING (INBOX) */}
@@ -433,8 +433,8 @@ export default function App() {
                 </AnimatePresence>
             </div>
 
-            {/* Bottom Navigation Bar */}
-            <div className="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 px-6 py-2 pb-6 z-50 flex justify-between items-center shadow-2xl">
+            {/* Bottom Navigation Bar - Static Bottom */}
+            <div className="shrink-0 bg-slate-900 border-t border-slate-800 px-6 py-2 pb-6 z-50 flex justify-between items-center shadow-2xl safe-area-bottom">
                 <button
                     onClick={() => { setCurrentTab('measure'); setView('list'); }}
                     className={`flex flex-col items-center gap-1 transition-all ${currentTab === 'measure' ? 'text-emerald-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
