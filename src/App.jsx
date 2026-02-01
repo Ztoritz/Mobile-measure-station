@@ -111,11 +111,19 @@ export default function App() {
 
         if (!isNaN(numVal)) {
             const diff = numVal - parseFloat(sanitize(def.nominal));
-            // Robust tolerance check: Upper +Abs, Lower -Abs
-            const upperLimit = Math.abs(parseFloat(sanitize(def.upperTol)));
-            const lowerLimit = -Math.abs(parseFloat(sanitize(def.lowerTol)));
 
-            if (diff <= upperLimit && diff >= lowerLimit) {
+            // Remove Math.abs constraint:
+            // "Lower" value is subtracted. "Upper" value is added.
+            // This is relative to difference (Upper Gap, Lower Gap).
+            // Equivalent to: Measured >= (Nominal - Lower)  =>  Measured - Nominal >= -Lower  =>  Diff >= -Lower.
+
+            const upperLimit = parseFloat(sanitize(def.upperTol)) || 0;
+            const lowerLimit = parseFloat(sanitize(def.lowerTol)) || 0;
+
+            // Measured is OK if: 
+            // Measured <= (Nom + Upper)  =>  Diff <= Upper
+            // Measured >= (Nom - Lower)  =>  Diff >= -Lower  (Note the negative sign relative to input in "Minus" column)
+            if (diff <= upperLimit && diff >= -lowerLimit) {
                 status = 'OK';
             } else {
                 status = 'FAIL';
