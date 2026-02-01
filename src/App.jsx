@@ -47,6 +47,7 @@ export default function App() {
         // Real-time Updates
         newSocket.on('order_created', (newOrder) => {
             setRequests(prev => {
+                if (prev.some(r => r.id === newOrder.id)) return prev;
                 const updated = [newOrder, ...prev];
                 updateDrawingsList([...updated, ...history]);
                 return updated;
@@ -270,8 +271,8 @@ export default function App() {
                                                         <div className="text-sm font-medium text-slate-300">
                                                             {def.description || (def.gdtType !== 'none' ? def.gdtType : 'Dimension')}
                                                         </div>
-                                                        <div className="text-[10px] text-slate-500 font-mono">
-                                                            Nom: {def.nominal} <span className="text-slate-600">({def.lowerTol}/{def.upperTol})</span>
+                                                        <div className="text-sm text-slate-400 font-mono mt-1">
+                                                            Nom: <span className="text-slate-200 font-bold">{def.nominal}</span> <span className="text-slate-500 ml-1">({def.lowerTol} / {def.upperTol})</span>
                                                         </div>
                                                     </div>
                                                 </div>
