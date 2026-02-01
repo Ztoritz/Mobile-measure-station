@@ -117,10 +117,11 @@ export default function App() {
         const upper = parseSwedishFloat(def.upperTol) || 0; // e.g. 0.1
         const lower = parseSwedishFloat(def.lowerTol) || 0; // e.g. -0.1
 
-        // Calculate Limits (Nominal + Deviation)
-        // Example: 100 + (-0.1) = 99.9
-        const minLimit = nom + lower;
-        const maxLimit = nom + upper;
+        // Calculate Limits (Nominal +/- Deviation Magnitude)
+        // Screenshot confirms UI inputs are magnitudes (+ [0,2] - [0,2]).
+        // Min Limit = Nominal - Lower.
+        const minLimit = nom - Math.abs(lower);
+        const maxLimit = nom + Math.abs(upper);
 
         let status = 'NEUTRAL';
 
@@ -272,8 +273,8 @@ export default function App() {
                                     const nom = parseSwedishFloat(def.nominal);
                                     const lower = parseSwedishFloat(def.lowerTol) || 0;
                                     const upper = parseSwedishFloat(def.upperTol) || 0;
-                                    const minLimit = nom + lower;
-                                    const maxLimit = nom + upper;
+                                    const minLimit = nom - Math.abs(lower);
+                                    const maxLimit = nom + Math.abs(upper);
 
                                     const GDT_INFO = {
                                         'none': { s: '-', t: 'Ingen formtolerans' },
