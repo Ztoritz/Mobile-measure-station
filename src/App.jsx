@@ -120,10 +120,11 @@ export default function App() {
             const upperLimit = parseFloat(sanitize(def.upperTol)) || 0;
             const lowerLimit = parseFloat(sanitize(def.lowerTol)) || 0;
 
-            // Measured is OK if: 
-            // Measured <= (Nom + Upper)  =>  Diff <= Upper
-            // Measured >= (Nom - Lower)  =>  Diff >= -Lower  (Note the negative sign relative to input in "Minus" column)
-            if (diff <= upperLimit && diff >= -lowerLimit) {
+            // Klockren V3: Pure Addition logic.
+            // Diff must be >= LowerLimit. (e.g. Diff >= -0.1).
+            // This assumes LowerLimit input includes the negative sign.
+
+            if (diff <= upperLimit && diff >= lowerLimit) {
                 status = 'OK';
             } else {
                 status = 'FAIL';
