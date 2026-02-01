@@ -103,8 +103,8 @@ export default function App() {
 
     const handleMeasurementUpdate = (id, value) => {
         const def = measurements[id].def;
-        // Sanitize all inputs
-        const sanitize = (val) => String(val).replace(',', '.');
+        // Sanitize all inputs: remove spaces, replace commas with dots (global)
+        const sanitize = (val) => String(val).replace(/\s/g, '').replace(/,/g, '.');
         const numVal = parseFloat(sanitize(value));
 
         let status = 'NEUTRAL';
